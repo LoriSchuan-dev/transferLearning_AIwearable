@@ -8,6 +8,33 @@ from ast import literal_eval
 from sklearn.preprocessing import StandardScaler
 
 
+def split_gesture_data( data: pd.DataFrame, gestures: list = None ):
+    """
+    Split the provided gesture data by gestures. Returns a tuple of two
+    pandas DataFrames -- first contains selected gestures, second is the
+    holdout gestures.
+
+    :param data: Pandas dataframe of gesture data. Must have at least column
+    labeled 'gesture'.
+
+    :param gestures: List of selected gestures as zero-indexed integers.
+
+    :return: Returns a tuple of pandas DataFrames. First is selected gestures
+    and second is holdout gestures.
+    """
+
+    # Raise a value error if the gestures list is None or empty.
+    if not gestures:
+        raise ValueError( "Gesture selection must not be None" )
+
+    sel_column = 'gesture'
+
+    selected = data[ data[ sel_column ].isin( gestures ) ]
+    holdout = data[ ~data[ sel_column ].isin( gestures) ]
+
+    return selected, holdout
+
+
 def train_test_split( data, train_subjects=None,
                       test_subjects=None,
                       val_subjects=None,
