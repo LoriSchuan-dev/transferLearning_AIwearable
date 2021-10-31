@@ -93,7 +93,8 @@ def main():
     #                        figsize=[8,8])
 
 
-def train_model( idx, data, model_params, fit_params, verbose=2 ):
+def train_model( idx, data, model_params, fit_params,
+                 num_classes=20, num_subjects=8, verbose=2 ):
     """
     Wrapper for training and testing model. Returns the testing loss and
     accuracy and the test and predicted labels for the current iteration.
@@ -107,6 +108,10 @@ def train_model( idx, data, model_params, fit_params, verbose=2 ):
 
     :param fit_params: Tupled collection of fit/train parameters.
     Contains: epochs, lstm_callbacks.
+
+    :param num_classes: Number of gesture classes to train on.
+
+    :param num_subjects: Number of users in the dataset.
 
     :param verbose: Verbosity of output.
     0 -- no output. 1 -- Only current iteration output. 2 -- Full.
@@ -122,7 +127,7 @@ def train_model( idx, data, model_params, fit_params, verbose=2 ):
 
     # Select the training, test, and validation subjects.
     # Get random ordering of subjects.
-    subject_list = np.random.permutation( 8 )
+    subject_list = np.random.permutation( num_subjects )
 
     # Select the second from last as validation and last user as test.
     train_subjects = subject_list[ :-3 ].tolist()
@@ -147,7 +152,7 @@ def train_model( idx, data, model_params, fit_params, verbose=2 ):
     validation_data = (X_val, y_val) if X_val is not None else None
 
     # Create the naive LSTM model without dropout.
-    lstm_naive_model = create_lstm_model( num_classes=20,
+    lstm_naive_model = create_lstm_model( num_classes=num_classes,
                                           dropout=dropout_rate,
                                           units=lstm_units,
                                           data_length=data_length,
