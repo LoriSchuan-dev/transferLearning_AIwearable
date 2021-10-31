@@ -13,7 +13,7 @@ from util import train_test_split
 from util import print_results_table
 from util import save_results
 
-from models import create_lstm_model
+from models import create_lstm_model, train_model
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
     min_delta = 0.0001
     patience = 3
     earlystop_callback = EarlyStopping( monitor=monitor, min_delta=min_delta,
-                                  verbose=1, patience=patience )
+                                        verbose=1, patience=patience )
     lstm_callbacks = [earlystop_callback]
     # lstm_callbacks = None
 
@@ -55,8 +55,14 @@ def main():
 
 
     for i in range( num_iterations ):
+        lstm_naive_model = create_lstm_model( num_classes=20,
+                                              dropout=dropout_rate,
+                                              units=lstm_units,
+                                              data_length=data_length,
+                                              optimizer=lstm_optimizer )
+
         score, y_test, y_pred,\
-        train_val_test_splits = train_model( i, data, model_params, 
+        train_val_test_splits = train_model( i, data, lstm_naive_model,
                                              fit_params, verbose=1 )
 
         user_selections.append( train_val_test_splits )
@@ -71,7 +77,6 @@ def main():
         print( "test loss, test acc: ", score )
 
     # Generate the confusion matrix.
-    # cf_matrix = confusion_matrix( y_test, np.argmax( lstm_naive_model.predict( X_test ), axis=1 ) )
     cf_matrix = confusion_matrix( cf_matrix_true, cf_matrix_pred )
 
 
@@ -91,87 +96,6 @@ def main():
     #                                                '11', '12', '13', '14', '15',
     #                                                '16', '17', '18', '19', '20' ],
     #                        figsize=[8,8])
-
-
-def train_model( idx, data, model_params, fit_params,
-                 num_classes=20, num_subjects=8, verbose=2 ):
-    """
-    Wrapper for training and testing model. Returns the testing loss and
-    accuracy and the test and predicted labels for the current iteration.
-
-    :param idx: Current iteration index.
-
-    :param data: Pandas dataframe of gesture data.
-
-    :param model_params: Tupled collection of LSTM model parameters. 
-    Contains: dropout_rate, lstm_units, data_length, lstm_optimizer
-
-    :param fit_params: Tupled collection of fit/train parameters.
-    Contains: epochs, lstm_callbacks.
-
-    :param num_classes: Number of gesture classes to train on.
-
-    :param num_subjects: Number of users in the dataset.
-
-    :param verbose: Verbosity of output.
-    0 -- no output. 1 -- Only current iteration output. 2 -- Full.
-
-    :return: Returns tuple of test loss/accuracy, test labels, and predicted
-    labels.
-
-    """
-
-    # Get model parameters
-    dropout_rate, lstm_units, data_length, lstm_optimizer = model_params
-    epochs, lstm_callbacks = fit_params
-
-    # Select the training, test, and validation subjects.
-    # Get random ordering of subjects.
-    subject_list = np.random.permutation( num_subjects )
-
-    # Select the second from last as validation and last user as test.
-    train_subjects = subject_list[ :-3 ].tolist()
-    test_subjects = subject_list[ -3:-1 ].tolist()
-    val_subjects = [ subject_list[ -1 ] ]
-
-
-    if verbose > 0:
-        print( f"============================================================\n"
-               f"Iteration {idx+1}:\n"
-               f"    Train Subjects:      {train_subjects}\n"
-               f"    Validation Subjects: {val_subjects}\n"
-               f"    Test Subjects:       {test_subjects}\n" )
-
-    # Split the data into training, testing, and validation data and labels.
-    X_train, y_train, \
-    X_test, y_test,\
-    X_val, y_val = train_test_split( data,
-                                     train_subjects=train_subjects,
-                                     test_subjects=test_subjects,
-                                     val_subjects=val_subjects )
-    validation_data = (X_val, y_val) if X_val is not None else None
-
-    # Create the naive LSTM model without dropout.
-    lstm_naive_model = create_lstm_model( num_classes=num_classes,
-                                          dropout=dropout_rate,
-                                          units=lstm_units,
-                                          data_length=data_length,
-                                          optimizer=lstm_optimizer )
-
-    # Train the model on the training data.
-    fit_verbose = 0 if verbose <= 1 else 2 if verbose == 2 else 1
-    lstm_naive_model.fit( X_train, y_train, epochs=epochs,
-                          callbacks=lstm_callbacks, verbose=verbose,
-                          validation_data=validation_data )
-
-    # Test the model to see how well we did.
-    score = lstm_naive_model.evaluate( X_test, y_test )
-
-
-    return score, y_test, \
-            np.argmax( lstm_naive_model.predict( X_test ), axis=1 ), \
-            ( train_subjects, val_subjects, test_subjects )
-            
 
 
 def get_data( data_length ):
