@@ -1,5 +1,7 @@
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 from sklearn.metrics import confusion_matrix
 import numpy as np
 
@@ -20,12 +22,12 @@ def main():
     # Define simulation parameters.
     data_length = 26        # Length to truncate/pad samples to.
     epochs = 100             # Length of training.
-    num_iterations = 15     # Number of iterations of fit/test.
+    num_iterations = 1     # Number of iterations of fit/test.
     user_selections = []    # List to hold tuple of user splits (train/test/val)
 
 
     # Define naive model parameters.
-    dropout_rate = 0.8
+    dropout_rate = 0.6
     lstm_units = 64
 
     lr = 0.005
@@ -36,15 +38,20 @@ def main():
     patience = 3
     earlystop_callback = EarlyStopping( monitor=monitor, min_delta=min_delta,
                                         verbose=1, patience=patience )
-    lstm_callbacks = [earlystop_callback]
-    # lstm_callbacks = None
+    # lstm_callbacks = [earlystop_callback]
+    lstm_callbacks = None
 
     model_params = ( dropout_rate, lstm_units, data_length, lstm_optimizer )
     fit_params = ( epochs, lstm_callbacks )
 
 
     # Load data and trim/pad to set length.
-    data = get_data( data_length=data_length )
+    data_full = get_data( data_length=data_length )
+
+    # gestures = np.random.permutation( 20 )
+    gestures = np.arange( 20 )
+    data = data_full[ data_full[ 'gesture' ].isin( gestures[ :15 ] ) ]
+    print( f"First Gestures: {gestures[ :15 ]}" )
 
 
     # Create data structures to hold confusion matrix and loss/accuracy results
@@ -55,7 +62,7 @@ def main():
 
 
     for i in range( num_iterations ):
-        lstm_naive_model = create_lstm_model( num_classes=20,
+        lstm_naive_model = create_lstm_model( num_classes=15,
                                               dropout=dropout_rate,
                                               units=lstm_units,
                                               data_length=data_length,
@@ -63,7 +70,8 @@ def main():
 
         score, y_test, y_pred,\
         train_val_test_splits = train_model( i, data, lstm_naive_model,
-                                             fit_params, verbose=1 )
+                                             fit_params, num_classes=15,
+                                             verbose=1 )
 
         user_selections.append( train_val_test_splits )
 
@@ -75,6 +83,22 @@ def main():
 
         # Logging output for current iteration.
         print( "test loss, test acc: ", score )
+
+        f_model = Sequential()
+        f_model.add( lstm_naive_model )
+        f_model.layers.pop()
+        for layer in f_model.layers:
+            layer.trainable = False
+        f_model.add( Dense( 20, activation='softmax' ) )
+        f_model.compile( loss='categorical_crossentropy',
+                         optimizer=lstm_optimizer, metrics=['accuracy'] )
+
+        data = data_full[ data_full[ 'gesture' ].isin( gestures[ 15: ] ) ]
+        score, y_test, y_pred, \
+        train_val_test_splits = train_model( i, data, f_model, fit_params, verbose=1 )
+        f_model.summary()
+
+        print( "TRANSFER test loss, test acc: ", score )
 
     # Generate the confusion matrix.
     cf_matrix = confusion_matrix( cf_matrix_true, cf_matrix_pred )

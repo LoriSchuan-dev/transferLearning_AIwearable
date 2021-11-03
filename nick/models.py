@@ -43,11 +43,11 @@ def create_lstm_model( num_classes=20,
     model.add( tf.keras.layers.Dropout( rate=dropout ) )
 
     # Add final dense layers.
-    model.add( tf.keras.layers.Dense( units=units, activation='relu' ) )
+    model.add( tf.keras.layers.Dense( units=32, activation='relu' ) )
     model.add( tf.keras.layers.Dense( units=num_classes,
                                       activation='softmax' ) )
 
-    model.compile( loss='sparse_categorical_crossentropy', optimizer=optimizer,
+    model.compile( loss='categorical_crossentropy', optimizer=optimizer,
                    metrics=['accuracy'] )
 
     return model
@@ -107,15 +107,23 @@ def train_model( idx, data, model, fit_params,
                                      train_subjects=train_subjects,
                                      test_subjects=test_subjects,
                                      val_subjects=val_subjects )
-    validation_data = (X_val, y_val) if X_val is not None else None
+
+    y_train_cat = tf.keras.utils.to_categorical( y_train, dtype='float32' )
+    y_val_cat = tf.keras.utils.to_categorical( y_val, dtype='float32' )
+    y_test_cat = tf.keras.utils.to_categorical( y_test, dtype='float32' )
+
+    print( y_train_cat.shape, y_val_cat.shape, y_test_cat.shape )
+    print( y_train_cat[ 0 ] )
+
+    validation_data = (X_val, y_val_cat) if X_val is not None else None
 
     # Train the model on the training data.
     fit_verbose = 0 if verbose <= 1 else 2 if verbose == 2 else 1
-    model.fit( X_train, y_train, epochs=epochs, callbacks=callbacks,
+    model.fit( X_train, y_train_cat, epochs=epochs, callbacks=callbacks,
                verbose=verbose, validation_data=validation_data )
 
     # Test the model to see how well we did.
-    score = model.evaluate( X_test, y_test )
+    score = model.evaluate( X_test, y_test_cat )
 
 
     return score, y_test, np.argmax( model.predict( X_test ), axis=1 ), \
