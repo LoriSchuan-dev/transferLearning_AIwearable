@@ -54,7 +54,7 @@ def create_lstm_model( num_classes=20,
 
 
 def train_model( idx, data, model, fit_params,
-                 num_classes=20, num_subjects=8, verbose=2 ):
+                 classes=None, num_subjects=8, verbose=2 ):
     """
     Wrapper for training and testing model. Returns the testing loss and
     accuracy and the test and predicted labels for the current iteration.
@@ -68,7 +68,8 @@ def train_model( idx, data, model, fit_params,
     :param fit_params: Tupled collection of fit/train parameters.
     Contains: epochs, lstm_callbacks.
 
-    :param num_classes: Number of gesture classes to train on.
+    :param classes: List of gesture classes to be used for training. These
+    classes are used for mapping labels to range [0,num_classes).
 
     :param num_subjects: Number of users in the dataset.
 
@@ -100,6 +101,7 @@ def train_model( idx, data, model, fit_params,
                f"    Validation Subjects: {val_subjects}\n"
                f"    Test Subjects:       {test_subjects}\n" )
 
+
     # Split the data into training, testing, and validation data and labels.
     X_train, y_train, \
     X_test, y_test,\
@@ -108,23 +110,31 @@ def train_model( idx, data, model, fit_params,
                                      test_subjects=test_subjects,
                                      val_subjects=val_subjects )
 
+
+    # Convert the labels to categorical data for the model to train on.
+    # This conversion is necessary for the categorical crossentropy loss.
     y_train_cat = tf.keras.utils.to_categorical( y_train, dtype='float32' )
     y_val_cat = tf.keras.utils.to_categorical( y_val, dtype='float32' )
     y_test_cat = tf.keras.utils.to_categorical( y_test, dtype='float32' )
 
-    print( y_train_cat.shape, y_val_cat.shape, y_test_cat.shape )
-    print( y_train_cat[ 0 ] )
 
+    # If selecting validation data, create tuple of data and labels.
     validation_data = (X_val, y_val_cat) if X_val is not None else None
+
 
     # Train the model on the training data.
     fit_verbose = 0 if verbose <= 1 else 2 if verbose == 2 else 1
     model.fit( X_train, y_train_cat, epochs=epochs, callbacks=callbacks,
                verbose=verbose, validation_data=validation_data )
 
+
     # Test the model to see how well we did.
     score = model.evaluate( X_test, y_test_cat )
 
 
+    # Return the test scores, test labels, test predictions, and a tuple
+    # containing the subjects selected for the train, validation, and testing
+    # sets. We return the original labels here since we don't need to unmap
+    # since we just copied the original labels earlier.
     return score, y_test, np.argmax( model.predict( X_test ), axis=1 ), \
            ( train_subjects, val_subjects, test_subjects )

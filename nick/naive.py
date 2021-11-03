@@ -19,39 +19,40 @@ from models import create_lstm_model, train_model
 
 
 def main():
-    # Define simulation parameters.
-    data_length = 26        # Length to truncate/pad samples to.
-    epochs = 100             # Length of training.
-    num_iterations = 1     # Number of iterations of fit/test.
-    user_selections = []    # List to hold tuple of user splits (train/test/val)
+    ### Define simulation parameters.
+    data_truncate_pad_length = 26
+    epochs = 50
+    num_iterations = 1
+    num_gestures = 20
+    first_gesture_count = 15
+    data_percentage = 1.0
+    user_selections = []
 
 
     # Define naive model parameters.
     dropout_rate = 0.6
-    lstm_units = 64
-
+    lstm_units = 48
     lr = 0.005
     lstm_optimizer = Adam( learning_rate=lr, decay=1e-6 )
-
     monitor = 'loss'
     min_delta = 0.0001
     patience = 3
     earlystop_callback = EarlyStopping( monitor=monitor, min_delta=min_delta,
                                         verbose=1, patience=patience )
-    # lstm_callbacks = [earlystop_callback]
-    lstm_callbacks = None
+    lstm_callbacks = [earlystop_callback]
+    # lstm_callbacks = None
 
-    model_params = ( dropout_rate, lstm_units, data_length, lstm_optimizer )
+    model_params = ( dropout_rate, lstm_units, data_truncate_pad_length, lstm_optimizer )
     fit_params = ( epochs, lstm_callbacks )
 
 
     # Load data and trim/pad to set length.
-    data_full = get_data( data_length=data_length )
+    data_full = get_data( data_length=data_truncate_pad_length )
 
-    # gestures = np.random.permutation( 20 )
-    gestures = np.arange( 20 )
-    data = data_full[ data_full[ 'gesture' ].isin( gestures[ :15 ] ) ]
-    print( f"First Gestures: {gestures[ :15 ]}" )
+    # Select the gestures to train the naive model on.
+    # Remaining gestures will be trained
+    first_gestures = np.arange( first_gesture_count )
+    data = data_full[ data_full[ 'gesture' ].isin( first_gestures ) ]
 
 
     # Create data structures to hold confusion matrix and loss/accuracy results
@@ -65,12 +66,12 @@ def main():
         lstm_naive_model = create_lstm_model( num_classes=15,
                                               dropout=dropout_rate,
                                               units=lstm_units,
-                                              data_length=data_length,
+                                              data_length=data_truncate_pad_length,
                                               optimizer=lstm_optimizer )
 
         score, y_test, y_pred,\
         train_val_test_splits = train_model( i, data, lstm_naive_model,
-                                             fit_params, num_classes=15,
+                                             fit_params, classes=first_gestures,
                                              verbose=1 )
 
         user_selections.append( train_val_test_splits )
@@ -87,15 +88,19 @@ def main():
         f_model = Sequential()
         f_model.add( lstm_naive_model )
         f_model.layers.pop()
-        for layer in f_model.layers:
-            layer.trainable = False
+        # for layer in f_model.layers[ :-1 ]:
+        #     layer.trainable = False
         f_model.add( Dense( 20, activation='softmax' ) )
         f_model.compile( loss='categorical_crossentropy',
                          optimizer=lstm_optimizer, metrics=['accuracy'] )
 
-        data = data_full[ data_full[ 'gesture' ].isin( gestures[ 15: ] ) ]
+        # train_model( i, data_full, f_model, (epochs//2, lstm_callbacks),
+        #              classes=np.arange( gestures ), verbose=1 )
+        # f_model.layers[ -2 ].trainable = False
         score, y_test, y_pred, \
-        train_val_test_splits = train_model( i, data, f_model, fit_params, verbose=1 )
+        train_val_test_splits = train_model( i, data_full, f_model, fit_params,
+                                             classes=np.arange( num_gestures ),
+                                             verbose=1 )
         f_model.summary()
 
         print( "TRANSFER test loss, test acc: ", score )
@@ -115,11 +120,8 @@ def main():
 
 
     # Plot the confusion matrix.
-    # make_confusion_matrix( cf_matrix, categories=[ '01', '02', '03', '04', '05',
-    #                                                '06', '07', '08', '09', '10',
-    #                                                '11', '12', '13', '14', '15',
-    #                                                '16', '17', '18', '19', '20' ],
-    #                        figsize=[8,8])
+    make_confusion_matrix( cf_matrix, categories=np.arange( first_gesture_count ),
+                           figsize=[8,8])
 
 
 def get_data( data_length ):
