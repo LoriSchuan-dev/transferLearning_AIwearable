@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 from util import train_test_split
@@ -7,7 +8,7 @@ from util import train_test_split
 def create_lstm_model( num_classes=20,
                        dropout=0.8, units=128,
                        data_length=19,
-                       optimizer=tf.keras.optimizers.Adam( learning_rate=0.001 )
+                       optimizer=Adam( learning_rate=0.001 )
                     ):
     """
     Create a simple bidirectional LSTM model for classification. Creates a
@@ -43,7 +44,7 @@ def create_lstm_model( num_classes=20,
     model.add( tf.keras.layers.Dropout( rate=dropout ) )
 
     # Add final dense layers.
-    model.add( tf.keras.layers.Dense( units=32, activation='relu' ) )
+    model.add( tf.keras.layers.Dense( units=24, activation='relu' ) )
     model.add( tf.keras.layers.Dense( units=num_classes,
                                       activation='softmax' ) )
 
@@ -89,8 +90,8 @@ def train_model( idx, data, model, fit_params,
     subject_list = np.random.permutation( num_subjects )
 
     # Select the second from last as validation and last user as test.
-    train_subjects = subject_list[ :-3 ].tolist()
-    test_subjects = subject_list[ -3:-1 ].tolist()
+    train_subjects = subject_list[ :-2 ].tolist()
+    test_subjects = subject_list[ -2:-1 ].tolist()
     val_subjects = [ subject_list[ -1 ] ]
 
 
@@ -110,12 +111,20 @@ def train_model( idx, data, model, fit_params,
                                      test_subjects=test_subjects,
                                      val_subjects=val_subjects )
 
+    y_train_remap = np.copy( y_train )
+    y_val_remap = np.copy( y_val )
+    y_test_remap = np.copy( y_test )
+
+    for i in range( len( classes ) ):
+        y_train_remap[ y_train_remap == classes[ i ] ] = i
+        y_val_remap[ y_val_remap == classes[ i ] ] = i
+        y_test_remap[ y_test_remap == classes[ i ] ] = i
 
     # Convert the labels to categorical data for the model to train on.
     # This conversion is necessary for the categorical crossentropy loss.
-    y_train_cat = tf.keras.utils.to_categorical( y_train, dtype='float32' )
-    y_val_cat = tf.keras.utils.to_categorical( y_val, dtype='float32' )
-    y_test_cat = tf.keras.utils.to_categorical( y_test, dtype='float32' )
+    y_train_cat = tf.keras.utils.to_categorical( y_train_remap, dtype='float32' )
+    y_val_cat = tf.keras.utils.to_categorical( y_val_remap, dtype='float32' )
+    y_test_cat = tf.keras.utils.to_categorical( y_test_remap, dtype='float32' )
 
 
     # If selecting validation data, create tuple of data and labels.
@@ -134,7 +143,9 @@ def train_model( idx, data, model, fit_params,
 
     # Return the test scores, test labels, test predictions, and a tuple
     # containing the subjects selected for the train, validation, and testing
-    # sets. We return the original labels here since we don't need to unmap
-    # since we just copied the original labels earlier.
-    return score, y_test, np.argmax( model.predict( X_test ), axis=1 ), \
+    # sets. We return the original y_test here since we don't need to unmap
+    # since we just copied the original labels earlier. However, we need to
+    # scale the y_pred indexes since they will be 0-based.
+    return score, y_test, \
+           np.argmax( model.predict( X_test ), axis=1 ) + min( classes ), \
            ( train_subjects, val_subjects, test_subjects )

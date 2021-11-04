@@ -4,6 +4,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from sklearn.metrics import confusion_matrix
 import numpy as np
+import tensorflow as tf
 
 from util import make_confusion_matrix
 from util import accumulate_data
@@ -21,29 +22,41 @@ from models import create_lstm_model, train_model
 def main():
     ### Define simulation parameters.
     data_truncate_pad_length = 26
-    epochs = 50
-    num_iterations = 1
+    epochs = 100
+    num_iterations = 20
     num_gestures = 20
-    first_gesture_count = 15
+    first_gesture_count = 20
     data_percentage = 1.0
-    user_selections = []
+
+    transfer_learning = False
+    save_simulation_results = False
+    show_confusion_matrix = True
 
 
     # Define naive model parameters.
-    dropout_rate = 0.6
-    lstm_units = 48
+    dropout_rate = 0.8
+    lstm_units = 32
+
     lr = 0.005
-    lstm_optimizer = Adam( learning_rate=lr, decay=1e-6 )
+    model_optimizer = Adam( learning_rate=lr, decay=1e-5 )
+
     monitor = 'loss'
     min_delta = 0.0001
-    patience = 3
+    patience = 20
     earlystop_callback = EarlyStopping( monitor=monitor, min_delta=min_delta,
-                                        verbose=1, patience=patience )
+                                        verbose=1, patience=patience,
+                                        restore_best_weights=True )
     lstm_callbacks = [earlystop_callback]
     # lstm_callbacks = None
 
-    model_params = ( dropout_rate, lstm_units, data_truncate_pad_length, lstm_optimizer )
+    callbacks_trans = [EarlyStopping( monitor=monitor, min_delta=min_delta,
+                                      verbose=1, patience=5,
+                                      restore_best_weights=True ) ]
+    callbacks_trans = None
+
+    model_params = ( dropout_rate, lstm_units, data_truncate_pad_length, model_optimizer )
     fit_params = ( epochs, lstm_callbacks )
+    fit_params_trans = ( 1, lstm_callbacks )
 
 
     # Load data and trim/pad to set length.
@@ -52,7 +65,9 @@ def main():
     # Select the gestures to train the naive model on.
     # Remaining gestures will be trained
     first_gestures = np.arange( first_gesture_count )
+    trans_gestures = np.arange( first_gesture_count, num_gestures )
     data = data_full[ data_full[ 'gesture' ].isin( first_gestures ) ]
+    data_trans = data_full[ data_full[ 'gesture' ].isin( trans_gestures ) ]
 
 
     # Create data structures to hold confusion matrix and loss/accuracy results
@@ -60,17 +75,23 @@ def main():
     cf_matrix_true = np.array( [] )
     cf_matrix_pred = np.array( [] )
     scores = []
+    user_selections = []
+
+    cf_matrix_true_trans = np.array( [] )
+    cf_matrix_pred_trans = np.array( [] )
+    scores_trans = []
+    user_selections_trans = []
 
 
     for i in range( num_iterations ):
-        lstm_naive_model = create_lstm_model( num_classes=15,
-                                              dropout=dropout_rate,
-                                              units=lstm_units,
-                                              data_length=data_truncate_pad_length,
-                                              optimizer=lstm_optimizer )
+        model = create_lstm_model( num_classes=first_gesture_count,
+                                   dropout=dropout_rate,
+                                   units=lstm_units,
+                                   data_length=data_truncate_pad_length,
+                                   optimizer=model_optimizer )
 
         score, y_test, y_pred,\
-        train_val_test_splits = train_model( i, data, lstm_naive_model,
+        train_val_test_splits = train_model( i, data, model,
                                              fit_params, classes=first_gestures,
                                              verbose=1 )
 
@@ -85,43 +106,62 @@ def main():
         # Logging output for current iteration.
         print( "test loss, test acc: ", score )
 
-        f_model = Sequential()
-        f_model.add( lstm_naive_model )
-        f_model.layers.pop()
-        # for layer in f_model.layers[ :-1 ]:
-        #     layer.trainable = False
-        f_model.add( Dense( 20, activation='softmax' ) )
-        f_model.compile( loss='categorical_crossentropy',
-                         optimizer=lstm_optimizer, metrics=['accuracy'] )
+        if transfer_learning:
+            f_model = Sequential()
+            f_model.add( model )
+            f_model.layers.pop()
+            # for layer in f_model.layers:
+            #     layer.trainable = False
+            f_model.add( Dense( num_gestures - first_gesture_count,
+                                activation='softmax' ) )
+            f_model.compile( loss='categorical_crossentropy',
+                             optimizer=model_optimizer, metrics=['accuracy'] )
 
-        # train_model( i, data_full, f_model, (epochs//2, lstm_callbacks),
-        #              classes=np.arange( gestures ), verbose=1 )
-        # f_model.layers[ -2 ].trainable = False
-        score, y_test, y_pred, \
-        train_val_test_splits = train_model( i, data_full, f_model, fit_params,
-                                             classes=np.arange( num_gestures ),
-                                             verbose=1 )
-        f_model.summary()
+            score, y_test, y_pred, \
+            train_val_test_splits = train_model( i, data_trans, f_model,
+                                                 fit_params_trans,
+                                                 classes=trans_gestures,
+                                                 verbose=1 )
 
-        print( "TRANSFER test loss, test acc: ", score )
+            user_selections_trans.append( train_val_test_splits )
+
+            scores_trans.append( score )
+
+            # Generate data for confusion matrix.
+            cf_matrix_true_trans = np.hstack( ( cf_matrix_true_trans, y_test ) )
+            cf_matrix_pred_trans = np.hstack( ( cf_matrix_pred_trans, y_pred ) )
+
+            print( "TRANSFER test loss, test acc: ", score )
+
 
     # Generate the confusion matrix.
     cf_matrix = confusion_matrix( cf_matrix_true, cf_matrix_pred )
+    cf_matrix_trans = confusion_matrix( cf_matrix_true_trans,
+                                        cf_matrix_pred_trans )
 
 
     # Print the results for each simulation run in a tabular format.
     print_results_table( scores, user_selections, cf_matrix )
+    if transfer_learning:
+        print_results_table( scores_trans, user_selections_trans,
+                             cf_matrix_trans )
 
 
     # Save results.
-    # save_results( scores, user_selections, cf_matrix, epochs,
-    #               filename=f'results_{epochs}-epochs_{num_iterations}-iterations', 
-    #               loc='./results/', filetype=0 )
+    if save_simulation_results:
+        save_results( scores, user_selections, cf_matrix, epochs,
+                      filename=f"results_{epochs}-epochs_"
+                               f"{num_iterations}-iterations",
+                      loc='./results/', filetype=0 )
 
 
-    # Plot the confusion matrix.
-    make_confusion_matrix( cf_matrix, categories=np.arange( first_gesture_count ),
-                           figsize=[8,8])
+    if show_confusion_matrix:
+        # Plot the confusion matrix.
+        make_confusion_matrix( cf_matrix, categories=first_gestures,
+                               figsize=[8,8])
+        if transfer_learning:
+            make_confusion_matrix( cf_matrix_trans, categories=trans_gestures,
+                                   figsize=[8,8])
 
 
 def get_data( data_length ):
